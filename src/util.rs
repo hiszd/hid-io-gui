@@ -18,5 +18,5 @@ pub fn exec_stream<P: AsRef<std::path::Path>>(binary: P, args: Vec<&'static str>
         }
     }
     let out = cmd.stdout.unwrap();
-    out.
+    iced::futures::stream::
 }
