@@ -1,12 +1,11 @@
 use hid_io_client::keyboard_capnp::keyboard::signal::volume::Command as VolumeCommand;
-use iced::theme;
 use iced::widget::{button, column, container, row, text};
-use iced::Application;
 use iced::{keyboard, Subscription};
 
 pub mod subscriptions;
 pub mod util;
 
+#[derive(Default)]
 struct HidIoGui {
     count: u32,
     layer: u8,
@@ -18,54 +17,19 @@ pub enum Message {
     Increment,
     Decrement,
     Hid(hid_client_stdout::Messages),
+    NAN,
 }
 
-// impl TryFrom<hid_client_stdout::Messages> for Message {
-//     type Error = ();
-//
-//     fn try_from(msg: hid_client_stdout::Messages) -> Result<Self, Self::Error> {
-//         match msg {
-//             hid_client_stdout::Messages::Volume(c, v, a) => {
-//                 use hid_io_client::keyboard_capnp::keyboard::signal::volume::Command;
-//                 let cmd = match c {
-//                     Command::Set => "Set".to_string(),
-//                     Command::Inc => "Inc".to_string(),
-//                     Command::Dec => "Dec".to_string(),
-//                     Command::Mute => "Mute".to_string(),
-//                     Command::UnMute => "UnMute".to_string(),
-//                     Command::ToggleMute => "ToggleMute".to_string(),
-//                 };
-//                 Ok(Message::Volume(cmd, v.try_into().unwrap(), a.unwrap()))
-//             }
-//             hid_client_stdout::Messages::LayerChanged(l) => {
-//                 Ok(Message::LayerChanged(l.try_into().unwrap()))
-//             }
-//         }
-//     }
-// }
+impl HidIoGui {
+    // fn load() -> iced::Command<Message> {
+    //     iced::Command::perform(subscriptions::hid_test::HidTest::run(), |_| Message::NAN)
+    // }
 
-impl iced::Application for HidIoGui {
-    type Theme = iced::Theme;
-    type Executor = iced::executor::Default;
-    type Message = Message;
-    type Flags = ();
-
-    fn new(_flags: Self::Flags) -> (Self, iced::Command<Self::Message>) {
-        (
-            Self {
-                count: 0,
-                layer: 0,
-                volume: (None, 0, None),
-            },
-            iced::Command::none(),
-        )
+    fn theme(&self) -> iced::Theme {
+        iced::Theme::Dark
     }
 
-    fn title(&self) -> String {
-        String::from("HID-IO GUI")
-    }
-
-    fn update(&mut self, message: Self::Message) -> iced::Command<Self::Message> {
+    fn update(&mut self, message: Message) -> iced::Command<Message> {
         println!("Update: {:?}", message);
         match message {
             Message::Increment => {
@@ -97,36 +61,38 @@ impl iced::Application for HidIoGui {
                     }
                 }
             }
+            _ => {}
         }
         iced::Command::none()
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        let kb = keyboard::on_key_press(|key, modifiers| match key.as_ref() {
-            keyboard::Key::Character("k") if modifiers.command() => Some(Message::Increment),
-            keyboard::Key::Character("j") if modifiers.command() => Some(Message::Decrement),
-            _ => None,
-        });
+        fn handle_hotkey(key: keyboard::Key, _modifiers: keyboard::Modifiers) -> Option<Message> {
+            use keyboard::Key;
+
+            match key.as_ref() {
+                Key::Character("k") => Some(Message::Increment),
+                Key::Character("j") => Some(Message::Decrement),
+                _ => None,
+            }
+        }
+
         let hid = subscriptions::hidio::hid_worker().map(Message::Hid);
 
-        iced::Subscription::batch(vec![kb, hid])
+        iced::Subscription::batch(vec![hid, keyboard::on_key_press(handle_hotkey)])
     }
 
-    fn theme(&self) -> Self::Theme {
-        Self::Theme::Dark
-    }
-
-    fn view(&self) -> iced::Element<'_, Self::Message> {
+    fn view(&self) -> iced::Element<'_, Message> {
         let counter = row![
             button("+")
                 .on_press(Message::Increment)
                 .padding(20)
-                .style(theme::Button::Text),
+                .style(button::text),
             text(self.count.to_string()).horizontal_alignment(iced::alignment::Horizontal::Center),
             button("-")
+                .style(button::danger)
                 .on_press(Message::Decrement)
                 .padding(20)
-                .style(theme::Button::Destructive),
         ]
         .spacing(10)
         .align_items(iced::Alignment::Center);
@@ -151,23 +117,28 @@ impl iced::Application for HidIoGui {
         .padding(20)
         .align_items(iced::Alignment::Center);
 
-        let layer = row![text("Layer: "), text(self.layer),]
-            .spacing(10)
-            .padding(20)
-            .align_items(iced::Alignment::Center);
+        let layer = row![
+            text("Layer: "),
+            text(self.layer).horizontal_alignment(iced::alignment::Horizontal::Center),
+        ]
+        .spacing(10)
+        .padding(20)
+        .align_items(iced::Alignment::Center);
 
         let col = column!(counter, volume, layer).padding(20);
 
         let cont = container(col)
-            .width(iced::Length::Fill)
-            .height(iced::Length::Fill)
-            .center_x()
-            .center_y();
+            .center_x(iced::Length::Fill)
+            .center_y(iced::Length::Fill);
 
         cont.into()
     }
 }
 
 fn main() -> iced::Result {
-    HidIoGui::run(iced::Settings::default())
+    iced::program("HidIoGui", HidIoGui::update, HidIoGui::view)
+        .subscription(HidIoGui::subscription)
+        // .load(HidIoGui::load)
+        .theme(HidIoGui::theme)
+        .run()
 }
