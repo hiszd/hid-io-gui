@@ -77,7 +77,7 @@ impl HidIoGui {
             }
         }
 
-        let hid = subscriptions::hidio::hid_worker().map(Message::Hid);
+        let hid = subscriptions::hidio::hid_worker();
 
         iced::Subscription::batch(vec![hid, keyboard::on_key_press(handle_hotkey)])
     }

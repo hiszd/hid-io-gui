@@ -1,101 +1,71 @@
 use std::io::{BufRead, BufReader, Error, ErrorKind};
 use std::process::{ChildStdout, Stdio};
 
-use chrono::Datelike;
 use hid_client_stdout::Messages;
-use iced_futures::futures::sink::SinkExt;
 use iced_futures::subscription::{self, Subscription};
 
 pub enum State {
     Starting,
-    Ready(BufReader<ChildStdout>),
+    Ready {
+        reader: BufReader<ChildStdout>,
+        ready: bool,
+    },
 }
 
-pub fn hid_worker() -> Subscription<hid_client_stdout::Messages> {
+pub fn hid_worker() -> Subscription<crate::Message> {
+    use crate::Message;
     struct HidWorker;
 
-    subscription::channel(
+    subscription::unfold(
         std::any::TypeId::of::<HidWorker>(),
-        100,
-        |mut output| async move {
-            let mut state = State::Starting;
-            let mut ready = false;
-            let mut last_line: Option<chrono::NaiveDateTime> = None;
-
-            loop {
-                match &mut state {
-                    State::Starting => {
-                        let cmd = match std::process::Command::new("/home/zion/programming/rust/hid-io-ergoone/target/release/hid-io-ergoone")
-                            .arg("000001")
-                            .stdout(Stdio::piped())
-                            .spawn()
-                        {
-                            Ok(cmd) => cmd,
-                            Err(_) => {
-                                continue;
-                            }
-                        };
-                        let stdout = BufReader::new(
-                            cmd.stdout
-                                .ok_or_else(|| {
-                                    Error::new(
-                                        ErrorKind::Other,
-                                        "Could not capture standard output.",
-                                    )
-                                })
-                                .unwrap(),
-                        );
-                        state = State::Ready(stdout);
-                    }
-                    State::Ready(reader) => {
-                        println!("doing");
-                        let lines = reader.lines();
-                        for line in lines {
-                            let mut line = line.unwrap();
-                            let year = chrono::Utc::now().year();
-                            let line_str = line[0..15].to_string();
-                            let date_str = format!("{} {}", year.to_string(), line_str);
-                            println!("date_str: \"{}\"", date_str);
-                            let date = match chrono::NaiveDateTime::parse_from_str(
-                                &date_str,
-                                "%Y %b %d %H:%M:%S",
-                            ) {
-                                Ok(date) => date,
-                                Err(e) => {
-                                    println!("Error: {}", e);
-                                    continue;
-                                }
-                            };
-                            if date >= last_line.unwrap_or(date) {
-                                println!("newer date");
-                                last_line = Some(date);
-                            } else {
-                                println!("older date");
-                                continue;
-                            }
-                            let end = line.find("]:");
-                            if end.is_some() {
-                                line = line[end.unwrap() + 3..].to_string();
-                            }
+        State::Starting,
+        move |state| async move {
+            match state {
+                State::Starting => {
+                    let cmd = match std::process::Command::new(
+                        "/home/zion/programming/rust/hid-io-ergoone/target/release/hid-io-ergoone",
+                    )
+                    .arg("000001")
+                    .stdout(Stdio::piped())
+                    .spawn()
+                    {
+                        Ok(cmd) => cmd,
+                        Err(_) => {
+                            return (Message::NAN, State::Starting);
+                        }
+                    };
+                    let stdout = BufReader::new(
+                        cmd.stdout
+                            .ok_or_else(|| {
+                                Error::new(ErrorKind::Other, "Could not capture standard output.")
+                            })
+                            .unwrap(),
+                    );
+                    return (
+                        Message::NAN,
+                        State::Ready {
+                            reader: stdout,
+                            ready: false,
+                        },
+                    );
+                }
+                State::Ready { mut reader, ready } => {
+                    let mut ready = ready;
+                    println!("doing");
+                    let mut line = String::new();
+                    match reader.read_line(&mut line) {
+                        Ok(_) => {
+                            let line = line.trim().to_owned();
                             if ready {
                                 let msg = match Messages::try_from(line.as_str()) {
                                     Ok(msg) => msg,
                                     Err(_) => {
                                         println!("Error: {}", line);
-                                        continue;
+                                        return (Message::NAN, State::Ready { reader, ready });
                                     }
                                 };
                                 println!("TRANSPOSE: {} *** {:?}", line, msg);
-                                match output.send(msg).await {
-                                    Ok(_) => {
-                                        println!("sent");
-                                        continue;
-                                    }
-                                    Err(e) => {
-                                        println!("ERROR: {}", e);
-                                        continue;
-                                    }
-                                }
+                                (Message::Hid(msg), State::Ready { reader, ready })
                             } else {
                                 if line == "READY" {
                                     ready = true;
@@ -103,8 +73,10 @@ pub fn hid_worker() -> Subscription<hid_client_stdout::Messages> {
                                 } else {
                                     println!("!READY: {}", line);
                                 }
+                                (Message::NAN, State::Ready { reader, ready })
                             }
                         }
+                        Err(_) => (Message::NAN, State::Ready { reader, ready }),
                     }
                 }
             }
