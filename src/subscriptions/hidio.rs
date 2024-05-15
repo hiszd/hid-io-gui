@@ -1,5 +1,7 @@
-use std::io::{BufRead, BufReader, Error, ErrorKind};
-use std::process::{ChildStdout, Stdio};
+use std::process::Stdio;
+
+use tokio::io::{AsyncBufReadExt, BufReader, Lines};
+use tokio::process::{ChildStdout, Command};
 
 use hid_client_stdout::Messages;
 use iced_futures::subscription::{self, Subscription};
@@ -7,7 +9,7 @@ use iced_futures::subscription::{self, Subscription};
 pub enum State {
     Starting,
     Ready {
-        reader: BufReader<ChildStdout>,
+        reader: Lines<BufReader<ChildStdout>>,
         ready: bool,
     },
 }
@@ -22,7 +24,7 @@ pub fn hid_worker() -> Subscription<crate::Message> {
         move |state| async move {
             match state {
                 State::Starting => {
-                    let cmd = match std::process::Command::new(
+                    let mut cmd = match tokio::process::Command::new(
                         "/home/zion/programming/rust/hid-io-ergoone/target/release/hid-io-ergoone",
                     )
                     .arg("000001")
@@ -34,13 +36,7 @@ pub fn hid_worker() -> Subscription<crate::Message> {
                             return (Message::NAN, State::Starting);
                         }
                     };
-                    let stdout = BufReader::new(
-                        cmd.stdout
-                            .ok_or_else(|| {
-                                Error::new(ErrorKind::Other, "Could not capture standard output.")
-                            })
-                            .unwrap(),
-                    );
+                    let stdout = BufReader::new(cmd.stdout.take().unwrap()).lines();
                     return (
                         Message::NAN,
                         State::Ready {
@@ -52,15 +48,14 @@ pub fn hid_worker() -> Subscription<crate::Message> {
                 State::Ready { mut reader, ready } => {
                     let mut ready = ready;
                     println!("doing");
-                    let mut line = String::new();
-                    match reader.read_line(&mut line) {
-                        Ok(_) => {
+                    match reader.next_line().await {
+                        Ok(Some(line)) => {
                             let line = line.trim().to_owned();
                             if ready {
                                 let msg = match Messages::try_from(line.as_str()) {
                                     Ok(msg) => msg,
                                     Err(_) => {
-                                        println!("Error: {}", line);
+                                        println!("Decode Error: {}", line);
                                         return (Message::NAN, State::Ready { reader, ready });
                                     }
                                 };
@@ -76,6 +71,7 @@ pub fn hid_worker() -> Subscription<crate::Message> {
                                 (Message::NAN, State::Ready { reader, ready })
                             }
                         }
+                        Ok(None) => (Message::NAN, State::Ready { reader, ready }),
                         Err(_) => (Message::NAN, State::Ready { reader, ready }),
                     }
                 }
