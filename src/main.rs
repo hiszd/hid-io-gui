@@ -21,10 +21,6 @@ pub enum Message {
 }
 
 impl HidIoGui {
-    // fn load() -> iced::Command<Message> {
-    //     iced::Command::perform(subscriptions::hid_test::HidTest::run(), |_| Message::NAN)
-    // }
-
     fn theme(&self) -> iced::Theme {
         iced::Theme::Dark
     }

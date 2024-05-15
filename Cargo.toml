@@ -4,11 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-iced = { git = "https://github.com/iced-rs/iced", rev = "e69e2c0ee89266fcabe272d991c7dd4150b02270", features = [
-  "debug",
-  "web-colors",
-  "system",
-] }
+iced = { git = "https://github.com/iced-rs/iced", rev = "e69e2c0ee89266fcabe272d991c7dd4150b02270", features = ["debug", "web-colors", "system", "tokio"] }
 hid-io-client = { path = "../hid-io-core/hid-io-client" }
 hid-client-stdout = { version = "0.1.0", path = "../hid-client-stdout" }
 # iced_futures = { version = "0.12.0", features = ["tokio"] }
