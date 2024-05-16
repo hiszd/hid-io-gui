@@ -5,17 +5,28 @@ use iced::{keyboard, Subscription};
 pub mod subscriptions;
 pub mod util;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
+struct Volume {
+    command: String,
+    amount: String,
+    app: String,
+}
+
+#[derive(Default, Clone)]
+struct Strings {
+    layer: String,
+    volume: Volume,
+}
+
+#[derive(Default, Clone)]
 struct HidIoGui {
-    count: u32,
     layer: u8,
     volume: (Option<VolumeCommand>, u8, Option<String>),
+    strings: Strings,
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    Increment,
-    Decrement,
     Hid(hid_client_stdout::Messages),
     NAN,
 }
@@ -26,34 +37,31 @@ impl HidIoGui {
     }
 
     fn update(&mut self, message: Message) -> iced::Command<Message> {
-        println!("Update: {:?}", message);
         match message {
-            Message::Increment => {
-                if self.count != u32::MAX {
-                    self.count += 1;
-                    println!("Inc: {}", self.count);
-                }
-            }
-            Message::Decrement => {
-                if self.count != u32::MIN {
-                    self.count -= 1;
-                    println!("Inc: {}", self.count);
-                }
-            }
             Message::Hid(msg) => {
                 use hid_client_stdout::Messages;
                 match msg {
                     Messages::LayerChanged(l) => {
-                        println!("Layer: {}", l);
-                        self.layer = l.try_into().unwrap();
+                        // println!("Layer: {}", l);
+                        let l = l.try_into().unwrap();
+                        self.layer = l;
+                        self.strings.layer = l.to_string();
                     }
                     Messages::Volume(c, v, a) => {
-                        println!("Volume: {:?} {} {:?}", c, v, a);
+                        // println!("Volume: {:?} {} {:?}", c, v, a);
                         let app = match a {
-                            Some(app) => Some(app.clone()),
-                            None => None,
+                            Some(app) => app.clone(),
+                            None => "None".to_string(),
                         };
-                        self.volume = (Some(c), v.try_into().unwrap(), app);
+                        self.strings.volume = Volume {
+                            command: util::pad_string(
+                                hid_client_stdout::util::format_command(c),
+                                10,
+                                util::Direction::Center,
+                            ),
+                            amount: util::pad_string(v.to_string(), 3, util::Direction::Center),
+                            app: util::pad_string(app, 7, util::Direction::Center),
+                        };
                     }
                 }
             }
@@ -63,51 +71,31 @@ impl HidIoGui {
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        fn handle_hotkey(key: keyboard::Key, _modifiers: keyboard::Modifiers) -> Option<Message> {
-            use keyboard::Key;
+        // fn handle_hotkey(key: keyboard::Key, _modifiers: keyboard::Modifiers) -> Option<Message> {
+        //     use keyboard::Key;
+        //
+        //     match key.as_ref() {
+        //         Key::Character("q") => Some(Message::Increment),
+        //         _ => None,
+        //     }
+        // }
 
-            match key.as_ref() {
-                Key::Character("k") => Some(Message::Increment),
-                Key::Character("j") => Some(Message::Decrement),
-                _ => None,
-            }
-        }
+        // let hid = subscriptions::hidio::hid_worker();
 
-        let hid = subscriptions::hidio::hid_worker();
-
-        iced::Subscription::batch(vec![hid, keyboard::on_key_press(handle_hotkey)])
+        // iced::Subscription::batch(vec![hid, keyboard::on_key_press(handle_hotkey)])
+        subscriptions::hidio::hid_worker()
     }
 
     fn view(&self) -> iced::Element<'_, Message> {
-        let counter = row![
-            button("+")
-                .on_press(Message::Increment)
-                .padding(20)
-                .style(button::text),
-            text(self.count.to_string()).horizontal_alignment(iced::alignment::Horizontal::Center),
-            button("-")
-                .style(button::danger)
-                .on_press(Message::Decrement)
-                .padding(20)
-        ]
-        .spacing(10)
-        .align_items(iced::Alignment::Center);
-
-        let mut cmd_str = "None".to_string();
-        if self.volume.0.is_some() {
-            cmd_str = hid_client_stdout::util::str_from_command(self.volume.0.clone().unwrap())
-        }
+        let strings = self.strings.clone();
 
         let volume = row![
             text("Command: "),
-            text(cmd_str),
+            text(strings.volume.command),
             text("Volume: "),
-            text(self.volume.1.to_string()),
+            text(strings.volume.amount),
             text("Application: "),
-            text(match self.volume.2.clone() {
-                Some(app) => app,
-                None => "None".to_string(),
-            })
+            text(strings.volume.app)
         ]
         .spacing(10)
         .padding(20)
@@ -115,13 +103,13 @@ impl HidIoGui {
 
         let layer = row![
             text("Layer: "),
-            text(self.layer).horizontal_alignment(iced::alignment::Horizontal::Center),
+            text(strings.layer).horizontal_alignment(iced::alignment::Horizontal::Center),
         ]
         .spacing(10)
         .padding(20)
         .align_items(iced::Alignment::Center);
 
-        let col = column!(counter, volume, layer).padding(20);
+        let col = column!(volume, layer).padding(20);
 
         let cont = container(col)
             .center_x(iced::Length::Fill)
@@ -135,6 +123,8 @@ fn main() -> iced::Result {
     iced::program("HidIoGui", HidIoGui::update, HidIoGui::view)
         .subscription(HidIoGui::subscription)
         // .load(HidIoGui::load)
+        .default_font(iced::Font::with_name("FiraCode Nerd Font Mono"))
+        .antialiasing(true)
         .theme(HidIoGui::theme)
         .run()
 }

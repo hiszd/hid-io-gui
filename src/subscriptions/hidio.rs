@@ -47,7 +47,6 @@ pub fn hid_worker() -> Subscription<crate::Message> {
                 }
                 State::Ready { mut reader, ready } => {
                     let mut ready = ready;
-                    println!("doing");
                     match reader.next_line().await {
                         Ok(Some(line)) => {
                             let line = line.trim().to_owned();
