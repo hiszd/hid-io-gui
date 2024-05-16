@@ -5,23 +5,40 @@ use iced::{keyboard, Subscription};
 pub mod subscriptions;
 pub mod util;
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 struct Volume {
     command: String,
     amount: String,
     app: String,
 }
 
-#[derive(Default, Clone)]
+impl Default for Volume {
+    fn default() -> Self {
+        Self {
+            command: String::from("          "),
+            amount: String::from("   "),
+            app: String::from("       "),
+        }
+    }
+}
+
+#[derive(Clone)]
 struct Strings {
     layer: String,
     volume: Volume,
 }
 
+impl Default for Strings {
+    fn default() -> Self {
+        Self {
+            layer: String::from(" "),
+            volume: Volume::default(),
+        }
+    }
+}
+
 #[derive(Default, Clone)]
 struct HidIoGui {
-    layer: u8,
-    volume: (Option<VolumeCommand>, u8, Option<String>),
     strings: Strings,
 }
 
@@ -43,8 +60,6 @@ impl HidIoGui {
                 match msg {
                     Messages::LayerChanged(l) => {
                         // println!("Layer: {}", l);
-                        let l = l.try_into().unwrap();
-                        self.layer = l;
                         self.strings.layer = l.to_string();
                     }
                     Messages::Volume(c, v, a) => {
@@ -59,7 +74,7 @@ impl HidIoGui {
                                 10,
                                 util::Direction::Center,
                             ),
-                            amount: util::pad_string(v.to_string(), 3, util::Direction::Center),
+                            amount: util::pad_string(v.to_string(), 3, util::Direction::Right),
                             app: util::pad_string(app, 7, util::Direction::Center),
                         };
                     }
@@ -91,11 +106,11 @@ impl HidIoGui {
 
         let volume = row![
             text("Command: "),
-            text(strings.volume.command),
+            text(format!("\"{}\"", strings.volume.command)),
             text("Volume: "),
-            text(strings.volume.amount),
+            text(format!("\"{}\"", strings.volume.amount)),
             text("Application: "),
-            text(strings.volume.app)
+            text(format!("\"{}\"", strings.volume.app)),
         ]
         .spacing(10)
         .padding(20)
@@ -122,7 +137,6 @@ impl HidIoGui {
 fn main() -> iced::Result {
     iced::program("HidIoGui", HidIoGui::update, HidIoGui::view)
         .subscription(HidIoGui::subscription)
-        // .load(HidIoGui::load)
         .default_font(iced::Font::with_name("FiraCode Nerd Font Mono"))
         .antialiasing(true)
         .theme(HidIoGui::theme)
