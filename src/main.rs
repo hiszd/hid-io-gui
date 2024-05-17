@@ -1,5 +1,6 @@
+use hid_client_stdout::Node;
 use hid_io_client::keyboard_capnp::keyboard::signal::volume::Command as VolumeCommand;
-use iced::widget::{button, column, container, row, text};
+use iced::widget::{button, column, combo_box, container, row, text};
 use iced::{keyboard, Subscription};
 
 pub mod subscriptions;
@@ -37,18 +38,28 @@ impl Default for Strings {
     }
 }
 
-#[derive(Default, Clone)]
 struct HidIoGui {
     strings: Strings,
+    nodes: combo_box::State<Node>,
+    selected_node: Option<Node>,
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
     Hid(hid_client_stdout::Messages),
+    NodeSelect(Node),
     NAN,
 }
 
 impl HidIoGui {
+    fn new() -> Self {
+        Self {
+            strings: Strings::default(),
+            nodes: combo_box::State::new(),
+            selected_node: None,
+        }
+    }
+
     fn theme(&self) -> iced::Theme {
         iced::Theme::Dark
     }
@@ -104,6 +115,16 @@ impl HidIoGui {
     fn view(&self) -> iced::Element<'_, Message> {
         let strings = self.strings.clone();
 
+        let node_select = combo_box(
+            &self.nodes,
+            "Choose Node",
+            self.selected_node.as_ref(),
+            Message::NodeSelect,
+        )
+        .width(250);
+
+        let nodes = row![text("Devices: "), node_select].align_items(iced::Alignment::Center);
+
         let volume = row![
             text("Command: "),
             text(format!("\"{}\"", strings.volume.command)),
@@ -124,7 +145,7 @@ impl HidIoGui {
         .padding(20)
         .align_items(iced::Alignment::Center);
 
-        let col = column!(volume, layer).padding(20);
+        let col = column!(nodes, volume, layer).padding(20);
 
         let cont = container(col)
             .center_x(iced::Length::Fill)

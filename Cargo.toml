@@ -1,5 +1,5 @@
 [package]
-name    = "hid-io-gui"
+name    = "hidiokb-gui"
 version = "0.1.0"
 edition = "2021"
 
