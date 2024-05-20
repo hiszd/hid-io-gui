@@ -1,8 +1,9 @@
 use hid_client_stdout::Node;
 use hid_io_client::keyboard_capnp::keyboard::signal::volume::Command as VolumeCommand;
 use iced::widget::{button, column, combo_box, container, row, text};
-use iced::{keyboard, Subscription};
+use iced::{keyboard, Command, Subscription};
 
+pub mod hidio;
 pub mod subscriptions;
 pub mod util;
 
@@ -40,22 +41,35 @@ impl Default for Strings {
 
 struct HidIoGui {
     strings: Strings,
-    nodes: combo_box::State<Node>,
+    nodes: Vec<Node>,
+    combo_options: combo_box::State<String>,
     selected_node: Option<Node>,
+}
+
+impl Default for HidIoGui {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
     Hid(hid_client_stdout::Messages),
-    NodeSelect(Node),
+    NodesFound(Option<Vec<Node>>),
+    NodeSelect(String),
+    RefreshNodes,
     NAN,
 }
 
 impl HidIoGui {
+    fn load() -> Command<Message> {
+        Command::perform(hidio::fetch::fetch_nodes(), Message::NodesFound)
+    }
     fn new() -> Self {
         Self {
             strings: Strings::default(),
-            nodes: combo_box::State::new(),
+            nodes: Vec::new(),
+            combo_options: combo_box::State::new(Vec::new()),
             selected_node: None,
         }
     }
@@ -91,6 +105,24 @@ impl HidIoGui {
                     }
                 }
             }
+            Message::NodesFound(nodes) => {
+                if let Some(nodes) = nodes {
+                    self.nodes = nodes.clone();
+                    self.combo_options =
+                        combo_box::State::new(self.nodes.iter().map(|n| n.name.clone()).collect());
+                    if nodes.len() == 1 {
+                        self.selected_node = Some(nodes[0].clone());
+                    }
+                }
+            }
+            Message::NodeSelect(node) => {
+                let sel_node = Some(self.nodes.iter().find(|n| n.name == node).unwrap().clone());
+                println!("Selected: {:?}", sel_node);
+                self.selected_node = sel_node;
+            }
+            Message::RefreshNodes => {
+                return Command::perform(hidio::fetch::fetch_nodes(), Message::NodesFound);
+            }
             _ => {}
         }
         iced::Command::none()
@@ -109,21 +141,36 @@ impl HidIoGui {
         // let hid = subscriptions::hidio::hid_worker();
 
         // iced::Subscription::batch(vec![hid, keyboard::on_key_press(handle_hotkey)])
-        subscriptions::hidio::hid_worker()
+        if self.selected_node.is_some() {
+            subscriptions::hidio::hid_worker(Some(
+                self.selected_node.as_ref().unwrap().serial.clone(),
+            ))
+        } else {
+            Subscription::none()
+        }
     }
 
     fn view(&self) -> iced::Element<'_, Message> {
         let strings = self.strings.clone();
 
         let node_select = combo_box(
-            &self.nodes,
+            &self.combo_options,
             "Choose Node",
-            self.selected_node.as_ref(),
+            match &self.selected_node {
+                Some(node) => Some(&node.name),
+                None => None,
+            },
             Message::NodeSelect,
         )
         .width(250);
 
-        let nodes = row![text("Devices: "), node_select].align_items(iced::Alignment::Center);
+        let nodes = row![
+            text("Devices: "),
+            node_select,
+            button("Refresh").on_press(Message::RefreshNodes)
+        ]
+        .align_items(iced::Alignment::Center)
+        .spacing(10);
 
         let volume = row![
             text("Command: "),
@@ -159,6 +206,7 @@ fn main() -> iced::Result {
     iced::program("HidIoGui", HidIoGui::update, HidIoGui::view)
         .subscription(HidIoGui::subscription)
         .default_font(iced::Font::with_name("FiraCode Nerd Font Mono"))
+        .load(HidIoGui::load)
         .antialiasing(true)
         .theme(HidIoGui::theme)
         .run()
